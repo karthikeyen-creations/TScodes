@@ -29,10 +29,10 @@ public class FileProcessor {
             "customer_accounts.csv", "accounts"
         );
         Map<String, String> tableSchemas = Map.of(
-            "stocks", "(Symbol VARCHAR, Security VARCHAR, GICS_Sector VARCHAR, GICS_Sub_Industry VARCHAR, CIK VARCHAR, Last_Close_Price DOUBLE)",
-            "market_conditions", "(Type VARCHAR, Name VARCHAR, Condition VARCHAR)",
-            "holdings", "(AccountID VARCHAR, Ticker VARCHAR, Qty INT, Price DOUBLE, PositionTotal DOUBLE)",
-            "accounts", "(Account_ID VARCHAR, Age INT, Marital_Status VARCHAR, Dependents INT, Client_Industry VARCHAR, Residency_Zip VARCHAR, State VARCHAR, Account_Status VARCHAR, Annual_Income DOUBLE, Liquidity_Needs VARCHAR, Investment_Experience VARCHAR, Risk_Tolerance VARCHAR, Investment_Goals VARCHAR, Time_Horizon VARCHAR, Exclusions VARCHAR, SRI_Preferences VARCHAR, Tax_Status VARCHAR)"
+            "stocks", "(symbol VARCHAR, security VARCHAR, gicssector VARCHAR, gicssubindustry VARCHAR, cik VARCHAR, lastcloseprice DOUBLE)",
+            "market_conditions", "(type VARCHAR, name VARCHAR, condition VARCHAR)",
+            "holdings", "(accountid VARCHAR, ticker VARCHAR, qty INT, price DOUBLE, positiontotal DOUBLE)",
+            "accounts", "(accountid VARCHAR, age INT, maritalstatus VARCHAR, dependents INT, clientindustry VARCHAR, residencyzip VARCHAR, state VARCHAR, accountstatus VARCHAR, annualincome DOUBLE, liquidityneeds VARCHAR, investmentexperience VARCHAR, risktolerance VARCHAR, investmentgoals VARCHAR, timehorizon VARCHAR, exclusions VARCHAR, sripreferences VARCHAR, taxstatus VARCHAR)"
         );
         Map<String, Integer> rowCounts = new HashMap<>();
         File uploadFile = null;
@@ -64,6 +64,10 @@ public class FileProcessor {
                     int count = 0;
                     try (CSVReader reader = new CSVReader(new FileReader(csvFile))) {
                         String[] header = reader.readNext(); // skip header
+                        // Convert header to lowercase and remove underscores for column mapping
+                        for (int i = 0; i < header.length; i++) {
+                            header[i] = header[i].replaceAll("_", "").toLowerCase();
+                        }
                         String[] row;
                         while ((row = reader.readNext()) != null) {
                             String placeholders = String.join(",", Collections.nCopies(row.length, "?"));
