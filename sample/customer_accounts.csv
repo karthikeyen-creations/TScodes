@@ -1,5 +1,0 @@
-Account_ID,Age,Marital_Status,Dependents,Client_Industry,Residency_Zip,State,Account_Status,Annual_Income,Liquidity_Needs,Investment_Experience,Risk_Tolerance,Investment_Goals,Time_Horizon,Exclusions,SRI_Preferences,Tax_Status
-f3feaff86948,37,Married,2,Health Care Distributors,05401,VT,True,102097,Short-Term (3-12 months),Moderate,Moderate,Education,Long-term,Exclude Sector: Utilities,No specific preference,Tax-deferred
-b2a1c3d4e5f6,45,Single,0,Technology,94016,CA,True,150000,Long-Term (5+ years),High,High,Retirement,Long-term,Exclude Sector: Energy,ESG preferred,Taxable
-c7d8e9f0a1b2,29,Married,1,Automotive,77001,TX,False,85000,Short-Term (3-12 months),Low,Low,Home Purchase,Short-term,Exclude Sector: Healthcare,No specific preference,Tax-deferred
-c7d8e9f0a1b3,52,Divorced,3,Finance,10001,NY,True,200000,Long-Term (5+ years),Moderate,Moderate,Wealth Growth,Long-term,Exclude Sector: Technology,ESG preferred,Taxable
