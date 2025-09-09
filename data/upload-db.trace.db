@@ -1,0 +1,12 @@
+2025-09-09 15:40:01.131784+05:30 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLSyntaxErrorException: Table "STOCKS" not found (this database is empty); SQL statement:
+SELECT COUNT(*) FROM stocks [42104-224]
+2025-09-09 15:40:30.316015+05:30 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLSyntaxErrorException: Table "STOCKS" not found (this database is empty); SQL statement:
+SELECT COUNT(*) FROM stocks [42104-224]
+2025-09-09 15:42:26.628407+05:30 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLSyntaxErrorException: Table "STOCKS" not found (this database is empty); SQL statement:
+SELECT COUNT(*) FROM stocks [42104-224]
+2025-09-09 15:46:59.310237+05:30 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLSyntaxErrorException: Table "STOCKS" not found (this database is empty); SQL statement:
+SELECT COUNT(*) FROM stocks [42104-224]
