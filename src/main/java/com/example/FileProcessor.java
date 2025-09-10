@@ -14,7 +14,8 @@ import java.util.zip.ZipInputStream;
 
 public class FileProcessor {
     public void processAsyncFile(MultipartFile zipFile, String requestIdentifier) {
-        String uploadDir = "uploads/";
+        // String uploadDir = "uploads/";
+        String uploadDir = Paths.get(System.getProperty("user.dir"), "uploads").toString();
         // Ensure uploads directory exists
         File uploadsDirFile = new File(uploadDir);
         if (!uploadsDirFile.exists()) {
@@ -29,10 +30,10 @@ public class FileProcessor {
             "customer_accounts.csv", "accounts"
         );
         Map<String, String> tableSchemas = Map.of(
-            "stocks", "(symbol VARCHAR, security VARCHAR, gicssector VARCHAR, gicssubindustry VARCHAR, cik VARCHAR, lastcloseprice DOUBLE)",
-            "market_conditions", "(type VARCHAR, name VARCHAR, condition VARCHAR)",
-            "holdings", "(accountid VARCHAR, ticker VARCHAR, qty INT, price DOUBLE, positiontotal DOUBLE)",
-            "accounts", "(accountid VARCHAR, age INT, maritalstatus VARCHAR, dependents INT, clientindustry VARCHAR, residencyzip VARCHAR, state VARCHAR, accountstatus VARCHAR, annualincome DOUBLE, liquidityneeds VARCHAR, investmentexperience VARCHAR, risktolerance VARCHAR, investmentgoals VARCHAR, timehorizon VARCHAR, exclusions VARCHAR, sripreferences VARCHAR, taxstatus VARCHAR)"
+            "stocks", "(symbol VARCHAR PRIMARY KEY, security VARCHAR, gicssector VARCHAR, gicssubindustry VARCHAR, cik VARCHAR, lastcloseprice DOUBLE)",
+            "market_conditions", "(type VARCHAR, name VARCHAR, condition VARCHAR, PRIMARY KEY (type, name))",
+            "holdings", "(accountid VARCHAR, ticker VARCHAR, qty INT, price DOUBLE, positiontotal DOUBLE, PRIMARY KEY (accountid, ticker))",
+            "accounts", "(accountid VARCHAR PRIMARY KEY, age INT, maritalstatus VARCHAR, dependents INT, clientindustry VARCHAR, residencyzip VARCHAR, state VARCHAR, accountstatus VARCHAR, annualincome DOUBLE, liquidityneeds VARCHAR, investmentexperience VARCHAR, risktolerance VARCHAR, investmentgoals VARCHAR, timehorizon VARCHAR, exclusions VARCHAR, sripreferences VARCHAR, taxstatus VARCHAR)"
         );
         Map<String, Integer> rowCounts = new HashMap<>();
         File uploadFile = null;
