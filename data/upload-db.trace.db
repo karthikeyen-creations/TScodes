@@ -10,3 +10,6 @@ SELECT COUNT(*) FROM stocks [42104-224]
 2025-09-09 15:46:59.310237+05:30 jdbc[3]: exception
 org.h2.jdbc.JdbcSQLSyntaxErrorException: Table "STOCKS" not found (this database is empty); SQL statement:
 SELECT COUNT(*) FROM stocks [42104-224]
+2025-09-10 23:52:07.595091+05:30 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLDataException: Data conversion error converting "'' (HOLDINGS: ""SENTIMENTWEIGHT"" INTEGER)"; SQL statement:
+INSERT INTO holdings VALUES (?,?,?,?,?,?,?,?,?) [22018-224]
