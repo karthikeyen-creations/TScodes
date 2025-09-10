@@ -1,4 +1,8 @@
 import com.example.*;
+import com.example.model.AccountRebalanceCriteria;
+import com.example.model.RebalanceRequest;
+import com.example.service.RebalanceHandler;
+
 import org.junit.jupiter.api.Test;
 import java.util.*;
 

@@ -1,4 +1,4 @@
-package com.example;
+package com.example.service;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;

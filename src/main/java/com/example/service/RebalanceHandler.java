@@ -1,10 +1,13 @@
 
-package com.example;
+package com.example.service;
 
 import java.sql.*;
 import java.util.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+
+import com.example.model.AccountRebalanceCriteria;
+import com.example.model.RebalanceRequest;
 import com.google.gson.Gson;
 
 public class RebalanceHandler {
@@ -106,6 +109,82 @@ public class RebalanceHandler {
                                         System.out.println(row);
                                     }
                                 }
+                            }
+
+                            // Process results for exclusions and preferences
+                            List<Map<String, Object>> processed = new ArrayList<>();
+                            for (Map<String, Object> row : results) {
+                                Map<String, Object> entry = new LinkedHashMap<>();
+                                entry.put("ACCOUNTID", row.get("ACCOUNTID"));
+
+                                // Exclusions
+                                String exclusions = String.valueOf(row.get("EXCLUSIONS"));
+                                List<String> exsec = new ArrayList<>();
+                                List<String> excomp = new ArrayList<>();
+                                List<String> exind = new ArrayList<>();
+                                if (exclusions.contains("Exclude Sector:")) {
+                                    String[] parts = exclusions.split("Exclude Sector:")[1].split("\\|");
+                                    for (String part : parts) exsec.add(part.trim());
+                                }
+                                if (exclusions.contains("Exclude Company:")) {
+                                    String[] parts = exclusions.split("Exclude Company:")[1].split("\\|");
+                                    for (String part : parts) {
+                                        String comp = part.replaceAll("\\(.*?\\)", "").trim();
+                                        excomp.add(comp);
+                                    }
+                                }
+                                if (exclusions.contains("Exclude Industry:")) {
+                                    String[] parts = exclusions.split("Exclude Industry:")[1].split("\\|");
+                                    for (String part : parts) exind.add(part.trim());
+                                }
+                                entry.put("exsec", exsec);
+                                entry.put("excomp", excomp);
+                                entry.put("exind", exind);
+
+                                // Preferences
+                                String sripref = String.valueOf(row.get("SRIPREFERENCES"));
+                                String prefsec = null, prefcomp = null, prefind = null;
+                                if (sripref.contains("Prefer ESG:")) {
+                                    String[] parts = sripref.split("Prefer ESG:")[1].split("\\(");
+                                    if (parts.length > 1) prefcomp = parts[1].replace(")", "").trim();
+                                }
+                                if (sripref.contains("Prefer ESG in:")) {
+                                    String secind1 = sripref.split("Prefer ESG in:")[1].trim();
+                                    secind1 = secind1.replace(",", " ");
+                                    // Check stocks table for secind1 in gicssubindustry or gicssector
+                                    try (PreparedStatement stocksPs = accConn.prepareStatement(
+                                            "SELECT gicssubindustry, gicssector FROM stocks WHERE gicssubindustry = ? OR gicssector = ? LIMIT 1")) {
+                                        stocksPs.setString(1, secind1);
+                                        stocksPs.setString(2, secind1);
+                                        try (ResultSet stocksRs = stocksPs.executeQuery()) {
+                                            if (stocksRs.next()) {
+                                                String subindustry = stocksRs.getString("gicssubindustry");
+                                                String sector = stocksRs.getString("gicssector");
+                                                if (secind1.equals(subindustry)) {
+                                                    prefind = secind1;
+                                                }
+                                                if (secind1.equals(sector)) {
+                                                    prefsec = secind1;
+                                                }
+                                            } else {
+                                                // Not found in either column
+                                                prefsec = null;
+                                                prefind = null;
+                                            }
+                                        }
+                                    } catch (Exception e) {
+                                        e.printStackTrace();
+                                    }
+                                }
+                                entry.put("prefsec", prefsec);
+                                entry.put("prefcomp", prefcomp);
+                                entry.put("prefind", prefind);
+
+                                processed.add(entry);
+                            }
+                            // Print processed array for debug
+                            for (Map<String, Object> entry : processed) {
+                                System.out.println(entry);
                             }
                         } catch (Exception e) {
                             e.printStackTrace();
