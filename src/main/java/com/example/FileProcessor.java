@@ -9,8 +9,7 @@ import java.nio.file.*;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.util.*;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
+import net.lingala.zip4j.ZipFile;
 
 public class FileProcessor {
     public void processAsyncFile(MultipartFile zipFile, String requestIdentifier) {
@@ -23,20 +22,34 @@ public class FileProcessor {
         }
         String unzipDir = uploadDir + "unzipped/" + requestIdentifier + "/";
         String dbUrl = "jdbc:h2:file:./data/upload-db";
-        Map<String, String> csvTableMap = Map.of(
-            "Safari55.csv", "stocks",
-            "market_conditions.csv", "market_conditions",
-            "customer_accounts_holdings.csv", "holdings",
-            "customer_accounts.csv", "accounts"
-        );
-        Map<String, String> tableSchemas = Map.of(
-            "stocks", "(symbol VARCHAR PRIMARY KEY, security VARCHAR, gicssector VARCHAR, gicssubindustry VARCHAR, cik VARCHAR, lastcloseprice DOUBLE)",
-            "market_conditions", "(type VARCHAR, name VARCHAR, condition VARCHAR, PRIMARY KEY (type, name))",
-            "holdings", "(accountid VARCHAR, ticker VARCHAR, qty INT, price DOUBLE, positiontotal DOUBLE, PRIMARY KEY (accountid, ticker))",
-            "accounts", "(accountid VARCHAR PRIMARY KEY, age INT, maritalstatus VARCHAR, dependents INT, clientindustry VARCHAR, residencyzip VARCHAR, state VARCHAR, accountstatus VARCHAR, annualincome DOUBLE, liquidityneeds VARCHAR, investmentexperience VARCHAR, risktolerance VARCHAR, investmentgoals VARCHAR, timehorizon VARCHAR, exclusions VARCHAR, sripreferences VARCHAR, taxstatus VARCHAR)"
-        );
+        Map<String, String> csvTableMap = new HashMap<>();
+        csvTableMap.put("Safari55.csv", "stocks");
+        csvTableMap.put("market_conditions.csv", "market_conditions");
+        csvTableMap.put("customer_accounts_holdings.csv", "holdings");
+        csvTableMap.put("customer_accounts.csv", "accounts");
+
+        Map<String, String> tableSchemas = new HashMap<>();
+        tableSchemas.put("stocks", "(symbol VARCHAR PRIMARY KEY, security VARCHAR, gicssector VARCHAR, gicssubindustry VARCHAR, cik VARCHAR, lastcloseprice DOUBLE)");
+        tableSchemas.put("market_conditions", "(type VARCHAR, name VARCHAR, condition VARCHAR, PRIMARY KEY (type, name))");
+        tableSchemas.put("holdings", "(accountid VARCHAR, ticker VARCHAR, qty INT, price DOUBLE, positiontotal DOUBLE, PRIMARY KEY (accountid, ticker))");
+        tableSchemas.put("accounts", "(accountid VARCHAR PRIMARY KEY, age INT, maritalstatus VARCHAR, dependents INT, clientindustry VARCHAR, residencyzip VARCHAR, state VARCHAR, accountstatus VARCHAR, annualincome DOUBLE, liquidityneeds VARCHAR, investmentexperience VARCHAR, risktolerance VARCHAR, investmentgoals VARCHAR, timehorizon VARCHAR, exclusions VARCHAR, sripreferences VARCHAR, taxstatus VARCHAR)");
         Map<String, Integer> rowCounts = new HashMap<>();
         File uploadFile = null;
+        // Create tables in RebalReqs DB and close connection
+        String rebalDbUrl = "jdbc:h2:file:./data/RebalReqs";
+        try (Connection rebalConn = DriverManager.getConnection(rebalDbUrl, "sa", "")) {
+            JdbcTemplate rebalJdbc = new JdbcTemplate(new SingleConnectionDataSource(rebalConn, true));
+            // Drop tables if exist
+            rebalJdbc.execute("DROP TABLE IF EXISTS reqs");
+            rebalJdbc.execute("DROP TABLE IF EXISTS processes");
+            // Create reqs table
+            rebalJdbc.execute("CREATE TABLE reqs (reqid VARCHAR PRIMARY KEY, req VARCHAR, processflg1 BOOLEAN, processflg2 BOOLEAN)");
+            // Create processes table
+            rebalJdbc.execute("CREATE TABLE processes (process VARCHAR PRIMARY KEY, running BOOLEAN)");
+            // Connection will be closed automatically at end of try-with-resources
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
         try {
             // 1. Save zip to temp location
             uploadFile = new File(uploadDir, zipFile.getOriginalFilename());
@@ -93,28 +106,9 @@ public class FileProcessor {
         }
     }
 
-    // Helper: Unzip
+    // Helper: Unzip using Zip4j
     private void unzip(File zipFile, String destDir) throws IOException {
-        byte[] buffer = new byte[1024];
-        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(zipFile))) {
-            ZipEntry zipEntry = zis.getNextEntry();
-            while (zipEntry != null) {
-                File newFile = new File(destDir, zipEntry.getName());
-                if (zipEntry.isDirectory()) {
-                    newFile.mkdirs();
-                } else {
-                    new File(newFile.getParent()).mkdirs();
-                    try (FileOutputStream fos = new FileOutputStream(newFile)) {
-                        int len;
-                        while ((len = zis.read(buffer)) > 0) {
-                            fos.write(buffer, 0, len);
-                        }
-                    }
-                }
-                zipEntry = zis.getNextEntry();
-            }
-            zis.closeEntry();
-        }
+        new ZipFile(zipFile).extractAll(destDir);
     }
 
     // Helper: Delete directory recursively
