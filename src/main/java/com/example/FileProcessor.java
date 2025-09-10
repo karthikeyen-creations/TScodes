@@ -20,7 +20,7 @@ public class FileProcessor {
         if (!uploadsDirFile.exists()) {
             uploadsDirFile.mkdirs();
         }
-        String unzipDir = uploadDir + "unzipped/" + requestIdentifier + "/";
+        String unzipDir = uploadDir + "/unzipped" + requestIdentifier + "/";
         String dbUrl = "jdbc:h2:file:./data/upload-db";
         Map<String, String> csvTableMap = new HashMap<>();
         csvTableMap.put("Safari55.csv", "stocks");

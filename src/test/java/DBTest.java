@@ -1,9 +1,6 @@
 
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.web.MockMultipartFile;
-import java.io.FileInputStream;
 import java.io.IOException;
-import com.example.FileProcessor;
 
 public class DBTest {
     @Test

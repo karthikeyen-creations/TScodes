@@ -11,11 +11,18 @@ public class RebalanceHandlerTest {
             new AccountRebalanceCriteria("riskTolerance", "=", "Moderate")
         );
         RebalanceRequest request = new RebalanceRequest(
-            "fww9959b-1beb-4f8d-a731-edd5f61568d9",
+            "fww9959b-1beb-4f8d-a731-edd5f6156802",
             criterias
         );
         RebalanceHandler handler = new RebalanceHandler();
-        AccountsRebalanceResponse response = handler.handleAsyncRebalRequest(request);
-        System.out.println("Matched accounts: " + response.getAccounts());
+        String response = handler.handleAsyncRebalRequest(request);
+        System.out.println("Rebalance request result: " + response);
+        assert "done".equals(response);
+        // Wait for async thread to finish
+        try {
+            Thread.sleep(2000); // Adjust time as needed
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 }
