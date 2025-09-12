@@ -116,69 +116,324 @@ public class RebalanceHandler {
                             for (Map<String, Object> row : results) {
                                 Map<String, Object> entry = new LinkedHashMap<>();
                                 entry.put("ACCOUNTID", row.get("ACCOUNTID"));
+                                entry.put("accountstatus", row.get("ACCOUNTSTATUS"));
 
-                                // Exclusions
-                                String exclusions = String.valueOf(row.get("EXCLUSIONS"));
-                                List<String> exsec = new ArrayList<>();
-                                List<String> excomp = new ArrayList<>();
-                                List<String> exind = new ArrayList<>();
-                                if (exclusions.contains("Exclude Sector:")) {
-                                    String[] parts = exclusions.split("Exclude Sector:")[1].split("\\|");
-                                    for (String part : parts) exsec.add(part.trim());
-                                }
-                                if (exclusions.contains("Exclude Company:")) {
-                                    String[] parts = exclusions.split("Exclude Company:")[1].split("\\|");
-                                    for (String part : parts) {
-                                        String comp = part.replaceAll("\\(.*?\\)", "").trim();
-                                        excomp.add(comp);
-                                    }
-                                }
-                                if (exclusions.contains("Exclude Industry:")) {
-                                    String[] parts = exclusions.split("Exclude Industry:")[1].split("\\|");
-                                    for (String part : parts) exind.add(part.trim());
-                                }
-                                entry.put("exsec", exsec);
-                                entry.put("excomp", excomp);
-                                entry.put("exind", exind);
-
-                                // Preferences
-                                String sripref = String.valueOf(row.get("SRIPREFERENCES"));
+                                // Exclusions and Preferences logic
+                                String accountStatus = String.valueOf(row.get("ACCOUNTSTATUS"));
+                                List<String> exsec = null, excomp = null, exind = null;
                                 String prefsec = null, prefcomp = null, prefind = null;
-                                if (sripref.contains("Prefer ESG:")) {
-                                    String[] parts = sripref.split("Prefer ESG:")[1].split("\\(");
-                                    if (parts.length > 1) prefcomp = parts[1].replace(")", "").trim();
-                                }
-                                if (sripref.contains("Prefer ESG in:")) {
-                                    String secind1 = sripref.split("Prefer ESG in:")[1].trim();
-                                    secind1 = secind1.replace(",", " ");
-                                    // Check stocks table for secind1 in gicssubindustry or gicssector
-                                    try (PreparedStatement stocksPs = accConn.prepareStatement(
-                                            "SELECT gicssubindustry, gicssector FROM stocks WHERE gicssubindustry = ? OR gicssector = ? LIMIT 1")) {
-                                        stocksPs.setString(1, secind1);
-                                        stocksPs.setString(2, secind1);
-                                        try (ResultSet stocksRs = stocksPs.executeQuery()) {
-                                            if (stocksRs.next()) {
-                                                String subindustry = stocksRs.getString("gicssubindustry");
-                                                String sector = stocksRs.getString("gicssector");
-                                                if (secind1.equals(subindustry)) {
-                                                    prefind = secind1;
-                                                }
-                                                if (secind1.equals(sector)) {
-                                                    prefsec = secind1;
+                                List<Map<String, Object>> holdingsArr = null;
+                                Map<String, Object> cashEntry = null;
+                                Double holdingstotal = null;
+                                List<Map<String, Object>> sellordersArr = null;
+                                Double selltotal = null;
+                                if ("False".equalsIgnoreCase(accountStatus)) {
+                                    exsec = new ArrayList<>();
+                                    excomp = new ArrayList<>();
+                                    exind = new ArrayList<>();
+                                    prefsec = null;
+                                    prefcomp = null;
+                                    prefind = null;
+                                    holdingsArr = new ArrayList<>();
+                                    cashEntry = null;
+                                    holdingstotal = null;
+                                    sellordersArr = new ArrayList<>();
+                                    selltotal = null;
+                                } else {
+                                    String exclusions = String.valueOf(row.get("EXCLUSIONS"));
+                                    exsec = new ArrayList<>();
+                                    excomp = new ArrayList<>();
+                                    exind = new ArrayList<>();
+                                    if (exclusions.contains("Exclude Sector:")) {
+                                        String[] parts = exclusions.split("Exclude Sector:")[1].split("\\|");
+                                        for (String part : parts) {
+                                            String sector = part.trim();
+                                            if (!sector.isEmpty()) {
+                                                exsec.add(sector);
+                                            }
+                                        }
+                                    }
+                                    if (exclusions.contains("Exclude Company:")) {
+                                        String[] parts = exclusions.split("Exclude Company:")[1].split("\\|");
+                                        for (String part : parts) {
+                                            // Extract ticker from parentheses if present, else use trimmed part
+                                            String ticker = part;
+                                            if (part.contains("(")) {
+                                                int start = part.indexOf("(") + 1;
+                                                int end = part.indexOf(")");
+                                                if (start > 0 && end > start) {
+                                                    ticker = part.substring(start, end).trim();
                                                 }
                                             } else {
-                                                // Not found in either column
-                                                prefsec = null;
-                                                prefind = null;
+                                                ticker = part.trim();
+                                            }
+                                            excomp.add(ticker);
+                                        }
+                                    }
+                                    if (exclusions.contains("Exclude Industry:")) {
+                                        String[] parts = exclusions.split("Exclude Industry:")[1].split("\\|");
+                                        for (String part : parts) exind.add(part.trim());
+                                    }
+
+                                    String sripref = String.valueOf(row.get("SRIPREFERENCES"));
+                                    if (sripref.contains("Prefer ESG:")) {
+                                        String[] parts = sripref.split("Prefer ESG:")[1].split("\\(");
+                                        if (parts.length > 1) prefcomp = parts[1].replace(")", "").trim();
+                                    }
+                                    if (sripref.contains("Prefer ESG in:")) {
+                                        String secind1 = sripref.split("Prefer ESG in:")[1].trim();
+                                        // Split by comma or pipe, handle multiple values
+                                        String[] values = secind1.split(",|\\|");
+                                        System.out.println("Prefer ESG in values: " + Arrays.toString(values));
+                                        for (String val : values) {
+                                            String v = val.trim();
+                                            if (!v.isEmpty()) {
+                                                // Check stocks table for v in gicssubindustry or gicssector
+                                                try (PreparedStatement stocksPs = accConn.prepareStatement(
+                                                        "SELECT gicssubindustry, gicssector FROM stocks WHERE gicssubindustry = ? OR gicssector = ? LIMIT 1")) {
+                                                    stocksPs.setString(1, v);
+                                                    stocksPs.setString(2, v);
+                                                    try (ResultSet stocksRs = stocksPs.executeQuery()) {
+                                                        if (stocksRs.next()) {
+                                                            String subindustry = stocksRs.getString("gicssubindustry");
+                                                            String sector = stocksRs.getString("gicssector");
+                                                            System.out.println("Subindustry: " + subindustry + ", Sector: " + sector);
+                                                            if (v.equals(subindustry)) {
+                                                                prefind = v;
+                                                            }
+                                                            if (v.equals(sector)) {
+                                                                prefsec = v;
+                                                            }
+                                                        }
+                                                    }
+                                                } catch (Exception e) {
+                                                    e.printStackTrace();
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Populate holdings and cash from holdings table
+                                    holdingsArr = new ArrayList<>();
+                                    cashEntry = null;
+                                    try (PreparedStatement holdPs = accConn.prepareStatement(
+                                            "SELECT * FROM holdings WHERE accountid = ?")) {
+                                        holdPs.setString(1, String.valueOf(row.get("ACCOUNTID")));
+                                        try (ResultSet holdRs = holdPs.executeQuery()) {
+                                            holdingstotal = 0.0;
+                                            sellordersArr = new ArrayList<>();
+                                            selltotal = 0.0;
+                                            while (holdRs.next()) {
+                                                String ticker = holdRs.getString("ticker");
+                                                Map<String, Object> hrow = new LinkedHashMap<>();
+                                                ResultSetMetaData hmeta = holdRs.getMetaData();
+                                                int hcolCount = hmeta.getColumnCount();
+                                                for (int hi = 1; hi <= hcolCount; hi++) {
+                                                    hrow.put(hmeta.getColumnName(hi), holdRs.getObject(hi));
+                                                }
+                                                if ("CASH".equalsIgnoreCase(ticker)) {
+                                                    cashEntry = hrow;
+                                                } else {
+                                                    holdingsArr.add(hrow);
+                                                    Object posTotalObj = hrow.get("POSITIONTOTAL");
+                                                    if (posTotalObj instanceof Number) {
+                                                        holdingstotal += ((Number) posTotalObj).doubleValue();
+                                                    } else if (posTotalObj != null) {
+                                                        try {
+                                                            holdingstotal += Double.parseDouble(posTotalObj.toString());
+                                                        } catch (Exception ignore) {}
+                                                    }
+                                                    // Sellorders logic
+                                                    Object sentimentObj = hrow.get("SENTIMENTWEIGHT");
+                                                    int sentimentWeight = 0;
+                                                    if (sentimentObj instanceof Number) {
+                                                        sentimentWeight = ((Number) sentimentObj).intValue();
+                                                    } else if (sentimentObj != null) {
+                                                        try {
+                                                            sentimentWeight = Integer.parseInt(sentimentObj.toString());
+                                                        } catch (Exception ignore) {}
+                                                    }
+                                                    if (sentimentWeight < 0) {
+                                                        Map<String, Object> sellorder = new LinkedHashMap<>();
+                                                        String accountid = String.valueOf(row.get("ACCOUNTID"));
+                                                        sellorder.put("sourceid", accountid + ticker);
+                                                        sellorder.put("ticker", ticker);
+                                                        sellorder.put("side", "S");
+                                                        Object qtyObj = hrow.get("QTY");
+                                                        sellorder.put("qty", qtyObj);
+                                                        sellordersArr.add(sellorder);
+                                                        // Add to selltotal
+                                                        if (posTotalObj instanceof Number) {
+                                                            selltotal += ((Number) posTotalObj).doubleValue();
+                                                        } else if (posTotalObj != null) {
+                                                            try {
+                                                                selltotal += Double.parseDouble(posTotalObj.toString());
+                                                            } catch (Exception ignore) {}
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     } catch (Exception e) {
                                         e.printStackTrace();
                                     }
                                 }
+                                entry.put("exsec", exsec);
+                                entry.put("excomp", excomp);
+                                entry.put("exind", exind);
                                 entry.put("prefsec", prefsec);
                                 entry.put("prefcomp", prefcomp);
                                 entry.put("prefind", prefind);
+                                entry.put("holdings", holdingsArr);
+                                Object cashValue = "0";
+                                if (cashEntry != null && cashEntry.get("POSITIONTOTAL") != null) {
+                                    cashValue = cashEntry.get("POSITIONTOTAL");
+                                }
+                                entry.put("cash", cashValue);
+                                entry.put("holdingstotal", holdingstotal);
+                                entry.put("sellorders", sellordersArr);
+                                entry.put("selltotal", selltotal);
+
+                                // Add prefstocks array
+                                List<Map<String, Object>> prefstocksArr = null;
+                                if ("False".equalsIgnoreCase(accountStatus)) {
+                                    prefstocksArr = new ArrayList<>();
+                                } else {
+                                    prefstocksArr = new ArrayList<>();
+                                    // Build filter conditions
+                                    List<String> filterSymbols = prefcomp != null ? Arrays.asList(prefcomp.split(",")) : new ArrayList<>();
+                                    String filterSector = prefsec != null ? prefsec : null;
+                                    String filterSubindustry = prefind != null ? prefind : null;
+                                    // Query stocks table
+                                    try (PreparedStatement stocksPs = accConn.prepareStatement(
+                                            "SELECT * FROM stocks ORDER BY sentimentweight DESC")) {
+                                        try (ResultSet stocksRs = stocksPs.executeQuery()) {
+                                            ResultSetMetaData smeta = stocksRs.getMetaData();
+                                            int scolCount = smeta.getColumnCount();
+                                            while (stocksRs.next()) {
+                                                String symbol = stocksRs.getString("symbol");
+                                                String gicssector = stocksRs.getString("gicssector");
+                                                String gicssubindustry = stocksRs.getString("gicssubindustry");
+                                                boolean matches = false;
+                                                if (filterSymbols != null && !filterSymbols.isEmpty()) {
+                                                    for (String fs : filterSymbols) {
+                                                        if (symbol != null && symbol.equalsIgnoreCase(fs.trim())) {
+                                                            matches = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                                if (!matches && filterSector != null && gicssector != null && gicssector.equalsIgnoreCase(filterSector)) {
+                                                    matches = true;
+                                                }
+                                                if (!matches && filterSubindustry != null && gicssubindustry != null && gicssubindustry.equalsIgnoreCase(filterSubindustry)) {
+                                                    matches = true;
+                                                }
+                                                if (matches) {
+                                                    int sentimentWeight = 0;
+                                                    Object swObj = stocksRs.getObject("sentimentweight");
+                                                    if (swObj instanceof Number) {
+                                                        sentimentWeight = ((Number) swObj).intValue();
+                                                    } else if (swObj != null) {
+                                                        try {
+                                                            sentimentWeight = Integer.parseInt(swObj.toString());
+                                                        } catch (Exception ignore) {}
+                                                    }
+                                                    if (sentimentWeight > 0) {
+                                                        Map<String, Object> srow = new LinkedHashMap<>();
+                                                        for (int si = 1; si <= scolCount; si++) {
+                                                            srow.put(smeta.getColumnName(si), stocksRs.getObject(si));
+                                                        }
+                                                        prefstocksArr.add(srow);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } catch (Exception e) {
+                                        e.printStackTrace();
+                                    }
+                                }
+                                entry.put("prefstocks", prefstocksArr);
+
+                                // Add prefstockscount and cashaftersell
+                                Object prefstockscount = null;
+                                Object cashaftersell = null;
+                                if ("False".equalsIgnoreCase(accountStatus)) {
+                                    prefstockscount = null;
+                                    cashaftersell = null;
+                                } else {
+                                    prefstockscount = (prefstocksArr != null) ? prefstocksArr.size() : 0;
+                                    // cashValue may be string or number
+                                    double cashVal = 0.0;
+                                    if (cashValue != null) {
+                                        try {
+                                            cashVal = Double.parseDouble(cashValue.toString());
+                                        } catch (Exception ignore) {}
+                                    }
+                                    double sellTotalVal = (selltotal != null) ? selltotal : 0.0;
+                                    cashaftersell = cashVal + sellTotalVal;
+                                }
+                                entry.put("prefstockscount", prefstockscount);
+                                entry.put("cashaftersell", cashaftersell);
+
+                                // Add otherpositivestocks array
+                                List<Map<String, Object>> otherpositivestocksArr = null;
+                                if ("False".equalsIgnoreCase(accountStatus)) {
+                                    otherpositivestocksArr = new ArrayList<>();
+                                } else {
+                                    otherpositivestocksArr = new ArrayList<>();
+                                    // Prepare exclusion and preference sets for fast lookup
+                                    Set<String> prefcompSet = prefcomp != null ? new HashSet<>(Arrays.asList(prefcomp.split(","))) : new HashSet<>();
+                                    Set<String> excompSet = excomp != null ? new HashSet<>(excomp) : new HashSet<>();
+                                    Set<String> prefsecSet = prefsec != null ? new HashSet<>(Arrays.asList(prefsec.split(","))) : new HashSet<>();
+                                    Set<String> exsecSet = exsec != null ? new HashSet<>(exsec) : new HashSet<>();
+                                    Set<String> prefindSet = prefind != null ? new HashSet<>(Arrays.asList(prefind.split(","))) : new HashSet<>();
+                                    Set<String> exindSet = exind != null ? new HashSet<>(exind) : new HashSet<>();
+                                    // Query stocks table
+                                    try (PreparedStatement stocksPs = accConn.prepareStatement(
+                                            "SELECT * FROM stocks ORDER BY sentimentweight DESC")) {
+                                        try (ResultSet stocksRs = stocksPs.executeQuery()) {
+                                            ResultSetMetaData smeta = stocksRs.getMetaData();
+                                            int scolCount = smeta.getColumnCount();
+                                            while (stocksRs.next()) {
+                                                String symbol = stocksRs.getString("symbol");
+                                                String gicssector = stocksRs.getString("gicssector");
+                                                String gicssubindustry = stocksRs.getString("gicssubindustry");
+                                                int sentimentWeight = 0;
+                                                Object swObj = stocksRs.getObject("sentimentweight");
+                                                if (swObj instanceof Number) {
+                                                    sentimentWeight = ((Number) swObj).intValue();
+                                                } else if (swObj != null) {
+                                                    try {
+                                                        sentimentWeight = Integer.parseInt(swObj.toString());
+                                                    } catch (Exception ignore) {}
+                                                }
+                                                if (sentimentWeight > 0
+                                                    && (symbol == null || (!prefcompSet.contains(symbol) && !excompSet.contains(symbol)))
+                                                    && (gicssector == null || (!prefsecSet.contains(gicssector) && !exsecSet.contains(gicssector)))
+                                                    && (gicssubindustry == null || (!prefindSet.contains(gicssubindustry) && !exindSet.contains(gicssubindustry)))) {
+                                                    Map<String, Object> srow = new LinkedHashMap<>();
+                                                    for (int si = 1; si <= scolCount; si++) {
+                                                        srow.put(smeta.getColumnName(si), stocksRs.getObject(si));
+                                                    }
+                                                    otherpositivestocksArr.add(srow);
+                                                }
+                                            }
+                                        }
+                                    } catch (Exception e) {
+                                        e.printStackTrace();
+                                    }
+                                }
+                                entry.put("otherpositivestocks", otherpositivestocksArr);
+
+                                // Add otherpositivestockscount
+                                Object otherpositivestockscount = null;
+                                if ("False".equalsIgnoreCase(accountStatus)) {
+                                    otherpositivestockscount = null;
+                                } else {
+                                    otherpositivestockscount = (otherpositivestocksArr != null) ? otherpositivestocksArr.size() : 0;
+                                }
+                                entry.put("otherpositivestockscount", otherpositivestockscount);
 
                                 processed.add(entry);
                             }

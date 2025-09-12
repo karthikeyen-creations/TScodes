@@ -30,7 +30,7 @@ public class FileProcessor {
 
         Map<String, String> tableSchemas = new HashMap<>();
         tableSchemas.put("market_conditions", "(type VARCHAR, name VARCHAR, condition VARCHAR, PRIMARY KEY (type, name))");
-        tableSchemas.put("stocks", "(symbol VARCHAR PRIMARY KEY, security VARCHAR, gicssector VARCHAR, gicssubindustry VARCHAR, cik VARCHAR, lastcloseprice DOUBLE, companysentiment VARCHAR, sectorsentiment VARCHAR, industrysentiment VARCHAR)");
+    tableSchemas.put("stocks", "(symbol VARCHAR PRIMARY KEY, security VARCHAR, gicssector VARCHAR, gicssubindustry VARCHAR, cik VARCHAR, lastcloseprice DOUBLE, companysentiment VARCHAR, sectorsentiment VARCHAR, industrysentiment VARCHAR, sentimentweight INT)");
         tableSchemas.put("holdings", "(accountid VARCHAR, ticker VARCHAR, qty INT, price DOUBLE, positiontotal DOUBLE, companysentiment VARCHAR, sectorsentiment VARCHAR, industrysentiment VARCHAR, sentimentweight INT, PRIMARY KEY (accountid, ticker))");
         tableSchemas.put("accounts", "(accountid VARCHAR PRIMARY KEY, age INT, maritalstatus VARCHAR, dependents INT, clientindustry VARCHAR, residencyzip VARCHAR, state VARCHAR, accountstatus VARCHAR, annualincome DOUBLE, liquidityneeds VARCHAR, investmentexperience VARCHAR, risktolerance VARCHAR, investmentgoals VARCHAR, timehorizon VARCHAR, exclusions VARCHAR, sripreferences VARCHAR, taxstatus VARCHAR)");
         Map<String, Integer> rowCounts = new HashMap<>();
@@ -84,12 +84,13 @@ public class FileProcessor {
                         }
                         String[] row;
                         while ((row = reader.readNext()) != null) {
-                            // For stocks table, add 3 empty columns for sentiment
+                            // For stocks table, add 3 empty columns for sentiment and 1 for sentimentweight
                             if (tableName.equals("stocks")) {
-                                String[] newRow = Arrays.copyOf(row, row.length + 3);
+                                String[] newRow = Arrays.copyOf(row, row.length + 4);
                                 newRow[row.length] = ""; // companysentiment
                                 newRow[row.length + 1] = ""; // sectorsentiment
                                 newRow[row.length + 2] = ""; // industrysentiment
+                                newRow[row.length + 3] = "0"; // sentimentweight as default integer
                                 String placeholders = String.join(",", Collections.nCopies(newRow.length, "?"));
                                 jdbcTemplate.update("INSERT INTO " + tableName + " VALUES (" + placeholders + ")", (Object[]) newRow);
                             } else if (tableName.equals("holdings")) {
@@ -97,7 +98,7 @@ public class FileProcessor {
                                 newRow[row.length] = ""; // companysentiment
                                 newRow[row.length + 1] = ""; // sectorsentiment
                                 newRow[row.length + 2] = ""; // industrysentiment
-                                newRow[row.length + 3] = ""; // sentimentweight
+                                newRow[row.length + 3] = "0"; // sentimentweight as default integer
                                 String placeholders = String.join(",", Collections.nCopies(newRow.length, "?"));
                                 jdbcTemplate.update("INSERT INTO " + tableName + " VALUES (" + placeholders + ")", (Object[]) newRow);
                             } else {
@@ -141,6 +142,14 @@ public class FileProcessor {
                 // Calculate sentimentweight for each row in holdings
                 jdbcTemplate.update(
                     "UPDATE holdings SET sentimentweight = " +
+                    "(CASE companysentiment WHEN 'Negative' THEN -1 WHEN 'Neutral' THEN 0 WHEN 'Positive' THEN 1 ELSE 0 END) + " +
+                    "(CASE sectorsentiment WHEN 'Negative' THEN -1 WHEN 'Neutral' THEN 0 WHEN 'Positive' THEN 1 ELSE 0 END) + " +
+                    "(CASE industrysentiment WHEN 'Negative' THEN -1 WHEN 'Neutral' THEN 0 WHEN 'Positive' THEN 1 ELSE 0 END)"
+                );
+
+                // Calculate sentimentweight for each row in stocks
+                jdbcTemplate.update(
+                    "UPDATE stocks SET sentimentweight = " +
                     "(CASE companysentiment WHEN 'Negative' THEN -1 WHEN 'Neutral' THEN 0 WHEN 'Positive' THEN 1 ELSE 0 END) + " +
                     "(CASE sectorsentiment WHEN 'Negative' THEN -1 WHEN 'Neutral' THEN 0 WHEN 'Positive' THEN 1 ELSE 0 END) + " +
                     "(CASE industrysentiment WHEN 'Negative' THEN -1 WHEN 'Neutral' THEN 0 WHEN 'Positive' THEN 1 ELSE 0 END)"
