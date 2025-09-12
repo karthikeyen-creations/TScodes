@@ -8,6 +8,8 @@ import java.io.*;
 import java.nio.file.*;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.util.*;
 import net.lingala.zip4j.ZipFile;
 
@@ -36,7 +38,7 @@ public class FileProcessor {
         Map<String, Integer> rowCounts = new HashMap<>();
         File uploadFile = null;
         // Create tables in RebalReqs DB and close connection
-        String rebalDbUrl = "jdbc:h2:file:./data/RebalReqs";
+    String rebalDbUrl = "jdbc:h2:file:./data/RebalReqs";
         try (Connection rebalConn = DriverManager.getConnection(rebalDbUrl, "sa", "")) {
             JdbcTemplate rebalJdbc = new JdbcTemplate(new SingleConnectionDataSource(rebalConn, true));
             // Drop tables if exist
@@ -46,6 +48,8 @@ public class FileProcessor {
             rebalJdbc.execute("CREATE TABLE reqs (reqid VARCHAR PRIMARY KEY, req VARCHAR, processflg1 BOOLEAN, processflg2 BOOLEAN)");
             // Create processes table
             rebalJdbc.execute("CREATE TABLE processes (process VARCHAR PRIMARY KEY, running BOOLEAN)");
+            // Insert initial row into processes table
+            rebalJdbc.update("INSERT INTO processes (process, running) VALUES (?, ?)", "ordertailoring", false);
             // Connection will be closed automatically at end of try-with-resources
         } catch (Exception e) {
             e.printStackTrace();

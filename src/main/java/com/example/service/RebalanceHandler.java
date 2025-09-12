@@ -12,8 +12,8 @@ import com.google.gson.Gson;
 
 public class RebalanceHandler {
     public String handleAsyncRebalRequest(RebalanceRequest rebalRequest) {
+    String rebalDbUrl = "jdbc:h2:file:./data/RebalReqs";
         // Write rebalRequest to RebalReqs DB
-        String rebalDbUrl = "jdbc:h2:file:./data/RebalReqs";
         String reqid = rebalRequest.getRequestIdentifier();
         String req = new Gson().toJson(rebalRequest.getAccountRebalanceCriterias());
         try (Connection conn = DriverManager.getConnection(rebalDbUrl, "sa", "")) {
@@ -22,7 +22,27 @@ public class RebalanceHandler {
         } catch (Exception e) {
             e.printStackTrace();
         }
-        runRebalanceAsync();
+        // Only call runRebalanceAsync if ordertailoring process is not running
+        boolean canRun = false;
+        // String rebalDbUrl = "jdbc:h2:file:./data/RebalReqs";
+        try (Connection conn = DriverManager.getConnection(rebalDbUrl, "sa", "")) {
+            try (PreparedStatement ps = conn.prepareStatement("SELECT running FROM processes WHERE process = ?")) {
+                ps.setString(1, "ordertailoring");
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        boolean running = rs.getBoolean("running");
+                        if (!running) {
+                            canRun = true;
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        if (canRun) {
+            runRebalanceAsync();
+        }
         return "done";
     }
 
@@ -30,6 +50,16 @@ public class RebalanceHandler {
     public void runRebalanceAsync() {
         System.out.println("runRebalanceAsync: starting new thread");
         new Thread(() -> {
+            // Mark ordertailoring process as running
+            try (Connection conn = DriverManager.getConnection("jdbc:h2:file:./data/RebalReqs", "sa", "")) {
+                try (PreparedStatement ps = conn.prepareStatement("UPDATE processes SET running = ? WHERE process = ?")) {
+                    ps.setBoolean(1, true);
+                    ps.setString(2, "ordertailoring");
+                    ps.executeUpdate();
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
             String flag1 = "Y";
             while ("Y".equals(flag1)) {
                 processRebalanceRequests();
@@ -50,6 +80,16 @@ public class RebalanceHandler {
                 if (!hasUnprocessed) {
                     flag1 = "N";
                 }
+            }
+            // Mark ordertailoring process as not running
+            try (Connection conn = DriverManager.getConnection("jdbc:h2:file:./data/RebalReqs", "sa", "")) {
+                try (PreparedStatement ps = conn.prepareStatement("UPDATE processes SET running = ? WHERE process = ?")) {
+                    ps.setBoolean(1, false);
+                    ps.setString(2, "ordertailoring");
+                    ps.executeUpdate();
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
             }
         }).start();
     }
@@ -435,6 +475,37 @@ public class RebalanceHandler {
                                 }
                                 entry.put("otherpositivestockscount", otherpositivestockscount);
 
+                                // Add prospectivestocks and prospectivestockscount
+                                List<Map<String, Object>> prospectivestocksArr = null;
+                                Object prospectivestockscount = null;
+                                if ("False".equalsIgnoreCase(accountStatus)) {
+                                    prospectivestocksArr = new ArrayList<>();
+                                    prospectivestockscount = null;
+                                } else {
+                                    prospectivestocksArr = new ArrayList<>();
+                                    // Add prefstocks first, then otherpositivestocks, up to 50 total
+                                    if (prefstocksArr != null) {
+                                        for (Map<String, Object> s : prefstocksArr) {
+                                            if (prospectivestocksArr.size() < 50) {
+                                                prospectivestocksArr.add(s);
+                                            } else {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if (otherpositivestocksArr != null && prospectivestocksArr.size() < 50) {
+                                        for (Map<String, Object> s : otherpositivestocksArr) {
+                                            if (prospectivestocksArr.size() < 50) {
+                                                prospectivestocksArr.add(s);
+                                            } else {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    prospectivestockscount = prospectivestocksArr.size();
+                                }
+                                entry.put("prospectivestocks", prospectivestocksArr);
+                                entry.put("prospectivestockscount", prospectivestockscount);
                                 processed.add(entry);
                             }
                             // Print processed array for debug
