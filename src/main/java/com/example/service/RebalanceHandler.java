@@ -196,14 +196,12 @@ public class RebalanceHandler {
                                     if (exclusions.contains("Exclude Company:")) {
                                         String[] parts = exclusions.split("Exclude Company:")[1].split("\\|");
                                         for (String part : parts) {
-                                            // Extract ticker from parentheses if present, else use trimmed part
+                                            // Extract ticker from last parentheses if present, else use trimmed part
                                             String ticker = part;
-                                            if (part.contains("(")) {
-                                                int start = part.indexOf("(") + 1;
-                                                int end = part.indexOf(")");
-                                                if (start > 0 && end > start) {
-                                                    ticker = part.substring(start, end).trim();
-                                                }
+                                            int lastOpen = part.lastIndexOf("(");
+                                            int lastClose = part.lastIndexOf(")");
+                                            if (lastOpen != -1 && lastClose != -1 && lastClose > lastOpen) {
+                                                ticker = part.substring(lastOpen + 1, lastClose).trim();
                                             } else {
                                                 ticker = part.trim();
                                             }
@@ -217,8 +215,14 @@ public class RebalanceHandler {
 
                                     String sripref = String.valueOf(row.get("SRIPREFERENCES"));
                                     if (sripref.contains("Prefer ESG:")) {
-                                        String[] parts = sripref.split("Prefer ESG:")[1].split("\\(");
-                                        if (parts.length > 1) prefcomp = parts[1].replace(")", "").trim();
+                                        String after = sripref.split("Prefer ESG:")[1];
+                                        int lastOpen = after.lastIndexOf("(");
+                                        int lastClose = after.lastIndexOf(")");
+                                        if (lastOpen != -1 && lastClose != -1 && lastClose > lastOpen) {
+                                            prefcomp = after.substring(lastOpen + 1, lastClose).trim();
+                                        } else {
+                                            prefcomp = after.trim();
+                                        }
                                     }
                                     if (sripref.contains("Prefer ESG in:")) {
                                         String secind1 = sripref.split("Prefer ESG in:")[1].trim();
@@ -478,9 +482,11 @@ public class RebalanceHandler {
                                 // Add prospectivestocks and prospectivestockscount
                                 List<Map<String, Object>> prospectivestocksArr = null;
                                 Object prospectivestockscount = null;
+                                Object totalsentwts = null;
                                 if ("False".equalsIgnoreCase(accountStatus)) {
                                     prospectivestocksArr = new ArrayList<>();
                                     prospectivestockscount = null;
+                                    totalsentwts = null;
                                 } else {
                                     prospectivestocksArr = new ArrayList<>();
                                     // Add prefstocks first, then otherpositivestocks, up to 50 total
@@ -503,15 +509,89 @@ public class RebalanceHandler {
                                         }
                                     }
                                     prospectivestockscount = prospectivestocksArr.size();
+                                    // Calculate totalsentwts as sum of SENTIMENTWEIGHT in prospectivestocksArr
+                                    int sentSum = 0;
+                                    for (Map<String, Object> s : prospectivestocksArr) {
+                                        Object swObj = s.get("SENTIMENTWEIGHT");
+                                        if (swObj instanceof Number) {
+                                            sentSum += ((Number) swObj).intValue();
+                                        } else if (swObj != null) {
+                                            try {
+                                                sentSum += Integer.parseInt(swObj.toString());
+                                            } catch (Exception ignore) {}
+                                        }
+                                    }
+                                    totalsentwts = sentSum;
                                 }
                                 entry.put("prospectivestocks", prospectivestocksArr);
                                 entry.put("prospectivestockscount", prospectivestockscount);
+                                entry.put("totalsentwts", totalsentwts);
+                                // Add perwtamt: cashaftersell / totalsentwts for true accounts, else null
+                                Object perwtamt = null;
+                                if (!"False".equalsIgnoreCase(accountStatus)) {
+                                    double cashAfterSellVal = 0.0;
+                                    if (cashaftersell != null) {
+                                        try {
+                                            cashAfterSellVal = Double.parseDouble(cashaftersell.toString());
+                                        } catch (Exception ignore) {}
+                                    }
+                                    double totalSentWtsVal = 0.0;
+                                    if (totalsentwts != null) {
+                                        try {
+                                            totalSentWtsVal = Double.parseDouble(totalsentwts.toString());
+                                        } catch (Exception ignore) {}
+                                    }
+                                    if (totalSentWtsVal != 0.0) {
+                                        perwtamt = cashAfterSellVal / totalSentWtsVal;
+                                    } else {
+                                        perwtamt = null;
+                                    }
+                                }
+                                entry.put("perwtamt", perwtamt);
+                                // Add fundalloc to each prospectivestocks entry
+                                if (!"False".equalsIgnoreCase(accountStatus) && prospectivestocksArr != null && perwtamt != null) {
+                                    double perwtamtVal = 0.0;
+                                    try {
+                                        perwtamtVal = Double.parseDouble(perwtamt.toString());
+                                    } catch (Exception ignore) {}
+                                    for (Map<String, Object> s : prospectivestocksArr) {
+                                        Object swObj = s.get("SENTIMENTWEIGHT");
+                                        double sentWt = 0.0;
+                                        if (swObj instanceof Number) {
+                                            sentWt = ((Number) swObj).doubleValue();
+                                        } else if (swObj != null) {
+                                            try {
+                                                sentWt = Double.parseDouble(swObj.toString());
+                                            } catch (Exception ignore) {}
+                                        }
+                                        double fundalloc = perwtamtVal * sentWt;
+                                        s.put("fundalloc", fundalloc);
+                                        // Add buyqty: fundalloc / LASTCLOSEPRICE, rounded down to integer
+                                        Object lcpObj = s.get("LASTCLOSEPRICE");
+                                        double lastClosePrice = 0.0;
+                                        if (lcpObj instanceof Number) {
+                                            lastClosePrice = ((Number) lcpObj).doubleValue();
+                                        } else if (lcpObj != null) {
+                                            try {
+                                                lastClosePrice = Double.parseDouble(lcpObj.toString());
+                                            } catch (Exception ignore) {}
+                                        }
+                                        int buyqty = 0;
+                                        if (lastClosePrice != 0.0) {
+                                            buyqty = (int)Math.floor(fundalloc / lastClosePrice);
+                                        }
+                                        s.put("buyqty", buyqty);
+                                    }
+                                }
                                 processed.add(entry);
                             }
                             // Print processed array for debug
                             for (Map<String, Object> entry : processed) {
                                 System.out.println(entry);
                             }
+                            // Build and print rebalance request JSON structure
+                            Map<String, Object> rebalanceRequestJson = buildRebalanceRequest(reqid, processed);
+                            System.out.println("Rebalance Request JSON: " + new Gson().toJson(rebalanceRequestJson));
                         } catch (Exception e) {
                             e.printStackTrace();
                         }
@@ -545,6 +625,55 @@ public class RebalanceHandler {
             System.out.println("attribute: " + c.getAttribute() + ", operator: " + c.getOperator() + ", value: " + c.getValue());
         }
         return criterias;
+    }
+
+    // Build JSON-compatible rebalance request structure from processed array
+    public Map<String, Object> buildRebalanceRequest(String reqid, List<Map<String, Object>> processed) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("requestIdIdentifier", reqid);
+
+        List<Map<String, Object>> accounts = new ArrayList<>();
+        for (Map<String, Object> entry : processed) {
+            Map<String, Object> accountObj = new HashMap<>();
+            accountObj.put("accountId", entry.get("ACCOUNTID"));
+
+            String accountStatus = String.valueOf(entry.get("accountstatus"));
+            List<Map<String, Object>> orders = new ArrayList<>();
+
+            if ("True".equalsIgnoreCase(accountStatus)) {
+                // Sell orders
+                List<Map<String, Object>> sellorders = (List<Map<String, Object>>) entry.get("sellorders");
+                if (sellorders != null) {
+                    for (Map<String, Object> sell : sellorders) {
+                        Map<String, Object> order = new HashMap<>();
+                        order.put("sourceId", UUID.randomUUID().toString());
+                        order.put("ticker", sell.get("ticker"));
+                        order.put("side", "S");
+                        order.put("qty", sell.get("qty"));
+                        orders.add(order);
+                    }
+                }
+                // Buy orders
+                List<Map<String, Object>> prospectivestocks = (List<Map<String, Object>>) entry.get("prospectivestocks");
+                if (prospectivestocks != null) {
+                    for (Map<String, Object> buy : prospectivestocks) {
+                        Map<String, Object> order = new HashMap<>();
+                        order.put("sourceId", UUID.randomUUID().toString());
+                        order.put("ticker", buy.get("SYMBOL"));
+                        order.put("side", "B");
+                        order.put("qty", buy.get("buyqty"));
+                        orders.add(order);
+                    }
+                }
+                accountObj.put("rebalance_ind", true);
+            } else {
+                accountObj.put("rebalance_ind", false);
+            }
+            accountObj.put("orders", orders);
+            accounts.add(accountObj);
+        }
+        result.put("accounts", accounts);
+        return result;
     }
 
 }
